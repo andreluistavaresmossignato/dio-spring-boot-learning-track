@@ -1,85 +1,130 @@
-# DIO Spring Boot - Final Project 05: Spring AI (budgeting)
+# Assistente de controle financeiro com Spring AI
 
-## Introduction
+Projeto final do módulo Spring AI da trilha Spring Boot da DIO. A aplicação permite registrar e consultar transações financeiras por uma API REST e também interagir por comandos de voz.
 
-This final module applies Spring AI in a budgeting API while preserving the same layered architecture used across the track.
+## O que o projeto faz
 
-The goal is to integrate AI capabilities without bypassing domain and use case boundaries.
+- Registra uma transação com descrição, valor em centavos e categoria.
+- Lista transações de uma categoria.
+- Recebe áudio em português, transcreve o comando, usa o modelo de IA para escolher uma ferramenta de aplicação e devolve a resposta em áudio MP3.
 
-## Code Context
+As categorias disponíveis são `GROCERIES`, `PHARMA` e `AUTO`. O modelo pode acionar as ferramentas de registro e consulta, mas as operações continuam passando pelos casos de uso da aplicação.
 
-The project processes voice commands to create and query financial transactions.
+## Tecnologias usadas
 
-Primary flow:
+- Java 25
+- Spring Boot 4
+- Spring AI com modelos da OpenAI para chat, transcrição e síntese de voz
+- Spring Web e Spring Data JPA
+- MySQL 9
+- Gradle
+- JUnit 5, AssertJ e Mockito para testes
 
-1. Client uploads an audio file.
-2. Audio is transcribed into text.
-3. The model selects an application tool/use case.
-4. The use case persists or queries transaction data.
-5. The final response is converted to audio.
+## Como executar
 
-## Project Structure
+### Requisitos
 
-- `src/main/java/dio/budgeting/domain`
-  - Domain model and repository contract.
-- `src/main/java/dio/budgeting/application`
-  - Use cases used by both REST and AI tool calling.
-- `src/main/java/dio/budgeting/infrastructure`
-  - HTTP adapters, JPA adapters, and integration glue.
+- JDK 25
+- Docker com Docker Compose
+- Chave da API da OpenAI para usar os recursos de IA
 
-## Module-Specific Topics
+### Iniciar o banco de dados
 
-### Speech-to-text
-
-- Uses `TranscriptionModel` for audio transcription.
-- Model settings are configured in `application.properties`.
-
-### Tool calling
-
-- `ChatClient` registers use-case tools.
-- `@Tool` methods expose business capabilities to the model.
-
-### Text-to-speech
-
-- `TextToSpeechModel` produces MP3 output from final text.
-- AI endpoint returns generated audio.
-
-## Spring AI Documentation
-
-- Spring AI Reference: https://docs.spring.io/spring-ai/reference/index.html
-- ChatModel API: https://docs.spring.io/spring-ai/reference/api/chatmodel.html
-- ChatClient API: https://docs.spring.io/spring-ai/reference/api/chatclient.html
-- Tools API: https://docs.spring.io/spring-ai/reference/api/tools.html
-- Audio Transcriptions API: https://docs.spring.io/spring-ai/reference/api/audio/transcriptions.html
-- Audio Speech API: https://docs.spring.io/spring-ai/reference/api/audio/speech.html
-
-## Shared Architecture References
-
-Common architecture concepts are documented in the root README:
-
-- [DDD layers](../README.md#ddd-layered-architecture)
-- [Class vs record](../README.md#java-class-vs-java-record-in-domain-modeling)
-- [Strong typed identifiers](../README.md#strong-typed-identifiers)
-- [Repository pattern](../README.md#repository-pattern)
-- [Use cases and Clean Architecture](../README.md#use-cases-and-clean-architecture)
-- [Docker Compose support](../README.md#docker-compose-support-in-development)
-
-## How to Run
-
-Set your OpenAI API key:
+Na pasta `05-spring-ai`, execute:
 
 ```bash
-export OPENAI_API_KEY="your_api_key_here"
+docker compose up -d database
 ```
 
-Run the application and tests:
+O Compose expõe o MySQL na porta `3307` e cria o banco e o usuário usados pela configuração do projeto.
+
+### Configurar a chave da OpenAI
+
+Configure `OPENAI_API_KEY` no ambiente antes de iniciar a aplicação. Não coloque a chave no código ou no README.
+
+PowerShell:
+
+```powershell
+$env:OPENAI_API_KEY = "sua_chave"
+```
+
+Linux/macOS:
+
+```bash
+export OPENAI_API_KEY="sua_chave"
+```
+
+O uso da API OpenAI é cobrado separadamente de uma assinatura do ChatGPT e pode gerar custos de acordo com o uso.
+
+### Iniciar a aplicação
+
+Windows:
+
+```powershell
+.\gradlew.bat bootRun
+```
+
+Linux/macOS:
 
 ```bash
 ./gradlew bootRun
+```
+
+## Melhoria implementada
+
+A gravação de transações agora valida os dados antes de persistir:
+
+- A descrição não pode ser nula nem vazia (incluindo apenas espaços).
+- O valor precisa ser maior que zero.
+
+A validação fica no `PersistTransactionUseCase`, compartilhado pela rota REST e pela ferramenta de Tool Calling. Assim, os dados inválidos são rejeitados independentemente de terem vindo de uma requisição HTTP ou de uma ação acionada pela IA. Nas chamadas REST, a aplicação responde com `400 Bad Request` e uma mensagem explicando o problema.
+
+## Como testar o fluxo principal
+
+Com o MySQL iniciado e a aplicação em execução, registre uma transação usando `amount` em centavos:
+
+```bash
+curl -X POST http://localhost:8080/transactions \
+  -H "Content-Type: application/json" \
+  -d '{"description":"Compras no mercado","category":"GROCERIES","amount":2590}'
+```
+
+Consulte as transações dessa categoria:
+
+```bash
+curl http://localhost:8080/transactions/GROCERIES
+```
+
+Confira a validação enviando uma descrição em branco ou um valor igual a zero. A API deve responder `400 Bad Request` com o detalhe do erro:
+
+```bash
+curl -i -X POST http://localhost:8080/transactions \
+  -H "Content-Type: application/json" \
+  -d '{"description":"  ","category":"GROCERIES","amount":0}'
+```
+
+Para testar o assistente por voz, envie um arquivo de áudio no campo multipart `file` para `POST /transactions/ai`. Esse fluxo chama os serviços de transcrição, chat e síntese de voz da OpenAI e requer `OPENAI_API_KEY` válida.
+
+## Testes automatizados
+
+Execute a suíte:
+
+```bash
 ./gradlew test
 ```
 
-## Notes
+No Windows, use `./gradlew.bat test`. O teste unitário `PersistTransactionUseCaseTest` verifica a aceitação de dados válidos e a rejeição de descrição nula ou em branco e de valor zero ou negativo, sem precisar de banco ou chave da OpenAI.
 
-- Educational final project focused on AI plus architectural discipline.
-- External provider integration tests may require active credentials.
+Os testes de integração que dependem da OpenAI requerem uma chave configurada e podem consumir créditos da API.
+
+## O que aprendi
+
+Este desafio ajudou a praticar a integração do Spring AI com uma aplicação em camadas: o modelo interpreta o pedido e seleciona ferramentas, enquanto os casos de uso executam as operações de negócio. Também reforcei a importância de validar os dados no ponto compartilhado de gravação, para que a mesma regra seja aplicada tanto à API REST quanto ao Tool Calling.
+
+## Referências
+
+- [Spring AI Reference](https://docs.spring.io/spring-ai/reference/index.html)
+- [ChatClient](https://docs.spring.io/spring-ai/reference/api/chatclient.html)
+- [Tool Calling](https://docs.spring.io/spring-ai/reference/api/tools.html)
+- [Transcrição de áudio](https://docs.spring.io/spring-ai/reference/api/audio/transcriptions.html)
+- [Síntese de voz](https://docs.spring.io/spring-ai/reference/api/audio/speech.html)
